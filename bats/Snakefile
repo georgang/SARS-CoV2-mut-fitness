@@ -1,0 +1,107 @@
+wildcard_constraints:
+    chunk="\d\d"
+
+rule all:
+    input:
+        # Create a json file of the following form for every non-recombinant region (NRR):
+        # {
+        #   "generated_by": {
+        #       "program": "augur", "version": "11.1.2"
+        #   },
+        #   "nodes": {
+        #       "NODE_XY": {
+        #           "muts": [mutations on the branch leading to this node], "sequence": "..."
+        #       }, ...
+        #   },
+        #   "reference": {
+        #       "nuc": ...
+        #   }
+        # }
+        expand("results/mutations/{chunk:02d}.json", chunk=range(27))
+
+rule align:
+    input:
+        # 19 bat sequences downloaded from GISAID (see also data/metadata.tsv, which is extracted from the J. E. Pekar et al. (2023) suppl. file 'media-1.tsv')
+        # not chopped into subregions, no gaps, between 27'679 and 29'855 nts long
+        "data/2024-05-17_bat_sequences.fasta"
+    output:
+        # alignment of the 19 bat sequences to Wuhan-Hu-1 (pairwise, latter included in file below)
+        # all alignments have length 29'903 and only Wuhan-Hu-1 has no gaps (cf. sequence alignment algorithm of Nextclade)
+        "results/alignment.fasta"
+    shell:
+        # See Nextclade documentation (Algorithm / 1. Sequence alignment) to understand the printed output of explore_nextclade_bats_alignment.py
+        """
+        nextclade run -d sars-cov-2 --include-reference --output-fasta {output} {input}
+        """
+
+rule breakpoints:
+    output:
+        # J. E. Pekar et al. (2023): "We used GARD [13] to independently identify recombination breakpoints on genomes closely related to SARS-CoV-1 and SARS-CoV-2 (...)"
+        "results/breakpoints.txt"
+    shell:
+        # J. E. Pekar et al. (2023) performs a multiple sequence alignment (using MAFFT) with 167 sequences (including most of the ones used here) -> gaps are introduced into the Wuhan-Hu-1 sequence (which, otherwise, remains the same)
+        # Here, the breakpoints from the gapped Wuhan-Hu-1 sequence (31'243 nts) are transformed to the ungapped one (29'903 nts)
+        """
+        python src/get_breakpoints.py
+        """
+
+rule chop:
+    # Chop the aligned bat sequences (all of length 29'903, including gaps) into non-recombinant regions (NRRs) according to the translated breakpoints
+    input:
+        aln = "results/alignment.fasta",
+        breakpoints = "results/breakpoints.txt"
+    output:
+        expand("results/chopped/{chunk:02d}.fasta", chunk=range(27))
+    run:
+        from Bio import AlignIO
+        import os
+        os.makedirs("results/chopped", exist_ok=True)
+        aln = AlignIO.read(input.aln, "fasta")
+
+        with open(input.breakpoints) as f:
+            breakpoints = [int(x) for x in f.read().strip().split("\n")]
+
+        for i, (start, end) in enumerate(zip(breakpoints[:-1], breakpoints[1:])):
+            # The first/second/third breakpoint is 0/900/1630 -> write nts 901-1630 into second file
+            sub_aln = aln[:, start:end]
+            with open(f"results/chopped/{i:02d}.fasta", "w") as f:
+                AlignIO.write(sub_aln, f, "fasta")
+
+rule tree:
+    input:
+        "results/chopped/{chunk}.fasta"
+    output:
+        # augur takes the 19+1 subsequences corresponding to one NRR, infers an unrooted tree with IQ-TREE (default), and stores this tree as a newick file
+        "results/trees/{chunk}.nwk"
+    shell:
+        """
+        augur tree --alignment {input} --output {output}
+        """
+
+rule refine:
+    input:
+        tree = "results/trees/{chunk}.nwk",
+        aln = "results/chopped/{chunk}.fasta"
+    output:
+        tree="results/trees/refined_{chunk}.nwk",
+        plot="results/trees/refined_{chunk}.png"
+    shell:
+        # refine_tree.py takes the unrooted tree of a NRR, roots it at the midpoint, and stores a new newick file and a picture of the tree
+        # Why not directly infer a rooted tree? Are the trees constrained to be bifurcating?
+        """
+        python src/refine_tree.py --tree {input.tree} --output {output.tree} --output-plot {output.plot}
+        """
+
+rule ancestral:
+    input:
+        tree = "results/trees/refined_{chunk}.nwk",
+        aln = "results/chopped/{chunk}.fasta"
+    output:
+        # input: refined tree of a NRR (containing names of all nodes, connectivity, and branch lengths) + corresponding leaf sequences
+        # output (obtained using TreeTime): sequence for every node and mutations on the branch leading to this node
+        # Why this detour? Is there no method that can take the sequences of a NRR, build the tree and store the sequences/mutations of all nodes?
+        "results/mutations/{chunk}.json"
+    shell:
+        """
+        augur ancestral --tree {input.tree} --alignment {input.aln} --output-node-data {output}
+        """
