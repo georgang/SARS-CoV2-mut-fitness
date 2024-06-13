@@ -10,8 +10,23 @@ plot_map = {'AC': (0, 0), 'CA': (0, 1), 'GA': (0, 2), 'TA': (0, 3),
             'AT': (2, 0), 'CT': (2, 1), 'GT': (2, 2), 'TG': (2, 3)
             }
 
+gene_boundaries = [(266, 13480, 'ORF1a'),
+                   (13468, 21552, 'ORF1b'),
+                   (21563, 25381, 'S'),
+                   (25393, 26217, 'ORF3a'),
+                   (26245, 26469, 'E'),
+                   (26523, 27188, 'M'),
+                   (27202, 27384, 'ORF6'),
+                   (27394, 27756, 'ORF7a'),
+                   (27756, 27884, 'ORF7b'),
+                   (27894, 28256, 'ORF8'),
+                   (28274, 28283, 'N'),
+                   (28284, 28574, 'N;ORF9b'),
+                   (28575, 29530, 'N'),
+                   (29558, 29671, 'ORF10')]
 
-def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, verbose=True):
+
+def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, include_noncoding=False, verbose=True):
 
     # Load file with mutation counts of selected clade
     df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/human_data/counts/counts_all_{clade}.csv')
@@ -55,13 +70,17 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
             print(f'{int(np.count_nonzero(context != context_sec_str)/3)} sites excluded because contexts not '
                   f'consistent between data sources.\n')
 
+    # Remove excluded mutations/sites
+    df = df[df['exclude'] == False]
+
     # Only keep desired mutation types
     # TODO: Print number of kept/excluded mutations
     if mut_types == 'synonymous':
-        df = df[(df['exclude'] == False) & (df['synonymous'] == True)]
+        if include_noncoding:
+            df = df[(df['synonymous'] == True) | (df['noncoding'] == True)]
+        else:
+            df = df[df['synonymous'] == True]
     elif mut_types == 'four_fold_degenerate':
-        df = df[(df['exclude'] == False) & (df['four_fold_degenerate'] == True)]
-    elif mut_types == 'non_excluded':
-        df = df[df['exclude'] == False]
+        df = df[df['four_fold_degenerate'] == True]
 
     return df
