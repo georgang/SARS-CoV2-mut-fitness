@@ -104,10 +104,11 @@ def get_mean_counts(df_mut, pseudo_count):
 
 
 if __name__ == '__main__':
-    '''This script visualises the mean mutation counts for every mutation type. I mainly used this for comparing 21J 
-    and 21K.'''
+    '''This script visualises the mean (log) counts and the relative amount for every mutation type. I mainly used 
+    this for comparing 21J and 21K.'''
+    # TODO: Save the figures for the different clades somewhere
 
-    CLADE = '21J'
+    CLADE = '21K'
 
     # Read file with mutation data
     df_all = load_mut_counts(CLADE)
@@ -116,8 +117,8 @@ if __name__ == '__main__':
     mean_counts, mean_log_counts = get_mean_counts(df_all, pseudo_count=0.5)
 
     # Plot mean (log) counts
-    # TODO: Make sure that the following two functions are correct
-    # TODO: Find a better solution for keeping the same y_lims when comparing clades
+    # TODO: Make sure that the following two functions are correct (order of mutation types!)
+    # TODO: Find a better solution for keeping the same y_lims when comparing clades (currently, it is set manually)
     plot_absolute_counts(mean_counts=mean_counts, mean_log_counts=mean_log_counts, title=CLADE)
 
     # Plot relative amount of mutations
