@@ -107,6 +107,8 @@ if __name__ == '__main__':
     '''This script visualises the mean (log) counts and the relative amount for every mutation type. I mainly used 
     this for comparing 21J and 21K.'''
     # TODO: Save the figures for the different clades somewhere
+    # TODO: It would be better to visualise the counts as
+    #  box plots with error bars as in the Seattle manuscript (also add the number of available sites)
 
     CLADE = '21J'
 
