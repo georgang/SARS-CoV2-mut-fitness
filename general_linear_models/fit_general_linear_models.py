@@ -373,7 +373,7 @@ def plot_mse(mean_sq_err_dic):
     plt.grid(True)
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.savefig(f'results/mse_{CLADE}')
+    plt.savefig(f'results/{CLADE}/mse_{CLADE}')
     plt.show()
 
 
