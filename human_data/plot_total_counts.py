@@ -39,12 +39,15 @@ def plot_relative_mut_counts(mean_counts, title):
 
 def plot_absolute_counts(mean_counts, mean_log_counts, title):
 
-    # Plot mean absolute/log counts for all mutation types in one plot
+    # Loop over both mean types
     for i, mean_type in enumerate([mean_counts, mean_log_counts]):
+
         keys = list(mean_type.keys())
         values = list(mean_type.values())
+
         paired_values = [val[0] for val in values]
         unpaired_values = [val[1] for val in values]
+
         bar_width = 0.4
 
         r1 = range(len(keys))
@@ -74,7 +77,7 @@ def plot_absolute_counts(mean_counts, mean_log_counts, title):
         plt.show()
 
 
-def get_mean_counts(df_mut, pseudo_count=0.5):
+def get_mean_counts(df_mut, pseudo_count):
 
     # Prepare dictionaries for mean (log) counts
     mean_counts = {}
@@ -110,7 +113,7 @@ if __name__ == '__main__':
     df_all = load_mut_counts(CLADE)
 
     # Get mean (log) count for every mutation type
-    mean_counts, mean_log_counts = get_mean_counts(df_all)
+    mean_counts, mean_log_counts = get_mean_counts(df_all, pseudo_count=0.5)
 
     # Plot mean (log) counts
     # TODO: Make sure that the following two functions are correct
