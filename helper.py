@@ -14,7 +14,7 @@ plot_map = {'AC': (0, 0), 'CA': (0, 1), 'GA': (0, 2), 'TA': (0, 3),
 def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, verbose=True):
 
     # Load file with mutation counts of selected clade
-    df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS2-mut-fitness-corr/human_data/counts/counts_all_{clade}.csv')
+    df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/human_data/counts/counts_all_{clade}.csv')
 
     # Add -2 to +2 context
     nts = df['clade_founder_nt'][0::3].values
@@ -24,7 +24,7 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
 
     # Load secondary structure for selected cell type (29882 nts, missing some A's at the end compared to Wuhan-Hu-1)
     df_sec_str = pd.read_csv(
-        f'/Users/georgangehrn/Desktop/SARS2-mut-fitness-corr/sec_stru_data/data/sec_structure_{sec_str_cell_type}.txt',
+        f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/sec_stru_data/data/sec_structure_{sec_str_cell_type}.txt',
         header=None,
         sep='\s+').drop(columns=[2, 3, 5])
     df_sec_str.rename(columns={0: 'nt_site', 1: 'nt_type', 4: 'unpaired'}, inplace=True)
@@ -35,7 +35,7 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
     unpaired = np.hstack((unpaired, np.full(len(nts) - len(df_sec_str), -1)))
     df['unpaired'] = np.repeat(unpaired, 3)
 
-    # Get -2 to +2 context from secondary structure data
+    # Get -2 to +2 context from secondary structure data for comparison to the one above from the counts.csv file
     nts_sec_str = np.hstack((df_sec_str['nt_type'], np.full(len(nts) - len(df_sec_str), 'N')))
     context_sec_str = ['XXXXX'] * len(nts_sec_str)
     context_sec_str[2:-2] = nts_sec_str[0:-4] + nts_sec_str[1:-3] + nts_sec_str[2:-2] + nts_sec_str[3:-1] + nts_sec_str[4:]
@@ -55,7 +55,8 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
             print(f'{int(np.count_nonzero(context != context_sec_str)/3)} sites excluded because contexts not '
                   f'consistent between data sources.\n')
 
-    # Only keep desired mutation types, TODO: Print number of kept/excluded mutations
+    # Only keep desired mutation types
+    # TODO: Print number of kept/excluded mutations
     if mut_types == 'synonymous':
         df = df[(df['exclude'] == False) & (df['synonymous'] == True)]
     elif mut_types == 'four_fold_degenerate':
