@@ -18,6 +18,20 @@ mut_type_cols = ['blue', 'orange', 'green', 'red', 'purple', 'brown',
                  'pink', 'gray', 'cyan', 'magenta', 'lime', 'teal']
 
 
+def add_predictions(dataframe):
+    gen_lin_model = GeneralLinearModel(type='l_r', test_data=dataframe)
+
+    gen_lin_model.W = pd.read_csv(
+        f"/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/general_linear_models/results/{CLADE}"
+        f"/l_r/learned_params.csv").to_dict(orient='list')
+
+    pred_log_counts = gen_lin_model.predict_log_counts()
+
+    dataframe['pred_log_counts'] = pred_log_counts
+
+    return dataframe
+
+
 class GeneralLinearModel:
 
     def __init__(self, type, training_data=None, regularization=None, W=None, test_data=None):
