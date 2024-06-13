@@ -48,7 +48,7 @@ if __name__ == '__main__':
 
     pred_log_count = np.diagonal(np.matmul(x, alpha[alpha_index].T))  # prediction of log(counts + 0.5)
 
-    exp_log_count = pd.read_csv('../human_data/exp_counts/exp_log_counts_21J.csv')
+    exp_log_count = pd.read_csv('human_data/exp_counts/exp_log_counts_21J.csv')
     exp_log_count = exp_log_count[(df['nt_type'] + df['mutated_nt'])].values[0]
 
     fitness_corr = act_log_count - pred_log_count

@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import Lasso
-from helper import load_mut_counts
+from helper import load_mut_counts, plot_map
 from sklearn.metrics import mean_squared_error
 
 plt.rcParams.update({'font.size': 12})
@@ -13,11 +13,6 @@ letters = ['A', 'C', 'G', 'T']
 mut_types = ['AC', 'AG', 'AT', 'CA', 'CG', 'CT', 'GA', 'GC', 'GT', 'TA', 'TC', 'TG']
 
 contexts = ['AA', 'AC', 'AG', 'AT', 'CA', 'CC', 'CG', 'CT', 'GA', 'GC', 'GG', 'GT', 'TA', 'TC', 'TG', 'TT']
-
-plot_map = {'AC': (0, 0), 'CA': (0, 1), 'GA': (0, 2), 'TA': (0, 3),
-            'AG': (1, 0), 'CG': (1, 1), 'GC': (1, 2), 'TC': (1, 3),
-            'AT': (2, 0), 'CT': (2, 1), 'GT': (2, 2), 'TG': (2, 3)
-            }
 
 mut_type_cols = ['blue', 'orange', 'green', 'red', 'purple', 'brown',
                  'pink', 'gray', 'cyan', 'magenta', 'lime', 'teal']
@@ -33,6 +28,7 @@ class GeneralLinearModel:
         self.W = W
         self.df_test = test_data
         self.mean_sq_errs = {}
+        self.W_l_r_normalized = None
 
     def train(self):
 
@@ -50,7 +46,6 @@ class GeneralLinearModel:
             log_counts = np.log(df_local['actual_count'].values + 0.5).reshape(-1, 1)  # dimensions (# of sites, 1)
 
             X, _ = self.create_data_matrix(df_local.copy())  # (# of sites, # of parameters in model), _
-            # TODO: Check the one-hot encodings
 
             if self.reg_type == 'l1':
                 lasso = Lasso(alpha=self.reg_strength, fit_intercept=False)
@@ -83,78 +78,72 @@ class GeneralLinearModel:
         self.plot_fit_vs_data()
 
         # Visualise learned parameters of model of choice
-        # if self.type == 'l_r':
-        #     self.plot_params()
+        if self.type == 'l_r':
+            self.plot_l_r_params(normalize=False)
 
-    def plot_params(self):
+    def plot_l_r_params(self, normalize, y_lims=None):
 
-        beta_dic = self.W
+        # Convert dictionary to matrix of dimension (12,8) where rows are ordered AC to TG
+        W_matrix = np.vstack([self.W[mut_type] for mut_type in mut_types])
 
-        # Prepare beta as numpy array with normalised parameters
-        beta_arr = np.stack(list(beta_dic.values()), axis=0).reshape(12, 8)
-        beta_arr = np.insert(beta_arr, [1, 2, 5], 0, axis=1)
-        beta_arr[:, 0] += np.mean(beta_arr[:, 1:3], axis=1)
-        beta_arr[:, 1:3] -= np.mean(beta_arr[:, 1:3], axis=1).reshape(-1, 1)
-        beta_arr[:, 0] += np.mean(beta_arr[:, 3:7], axis=1)
-        beta_arr[:, 3:7] -= np.mean(beta_arr[:, 3:7], axis=1).reshape(-1, 1)
-        beta_arr[:, 0] += np.mean(beta_arr[:, 7:11], axis=1)
-        beta_arr[:, 7:11] -= np.mean(beta_arr[:, 7:11], axis=1).reshape(-1, 1)
-        beta_min, beta_max = np.min(beta_arr[:, 1:]), np.max(beta_arr[:, 1:])
-        cutoff = 0.01
-        sparse_count = np.count_nonzero(np.abs(beta_arr[:, 1:]) < cutoff)
-        print(sparse_count)
+        # Add 3 additional columns (because of base case)
+        W_matrix = np.insert(W_matrix, [1, 2, 5], 0, axis=1)
+
+        if normalize:
+            if self.W_l_r_normalized is None:
+                # Normalize parameters
+                W_matrix[:, 0] += np.mean(W_matrix[:, 1:3], axis=1)
+                W_matrix[:, 1:3] -= np.mean(W_matrix[:, 1:3], axis=1).reshape(-1, 1)
+                W_matrix[:, 0] += np.mean(W_matrix[:, 3:7], axis=1)
+                W_matrix[:, 3:7] -= np.mean(W_matrix[:, 3:7], axis=1).reshape(-1, 1)
+                W_matrix[:, 0] += np.mean(W_matrix[:, 7:11], axis=1)
+                W_matrix[:, 7:11] -= np.mean(W_matrix[:, 7:11], axis=1).reshape(-1, 1)
+                self.W_l_r_normalized = W_matrix
+            else:
+                W_matrix = self.W_l_r_normalized
+
+        # Get smallest and largest parameter to equalize y-limits in the plots
+        w_min, w_max = np.min(W_matrix[:, 1:]), np.max(W_matrix[:, 1:])
 
         # Make a plot for every element in beta (#ofplots = #ofparameters)
-        fig, axes = plt.subplots(3, 4, figsize=(16, 10))
+        fig, axes = plt.subplots(3, 4, figsize=(16, 9))
         axes = axes.flatten()
         titles = [r'$\tilde{\alpha}_{base}$', r'$\tilde{\alpha}_{p}$', r'$\tilde{\alpha}_{up}$',
                   r'$\tilde{\alpha}_{A,l}$', r'$\tilde{\alpha}_{C,l}$', r'$\tilde{\alpha}_{G,l}$',
                   r'$\tilde{\alpha}_{T,l}$', r'$\tilde{\alpha}_{A,r}$', r'$\tilde{\alpha}_{C,r}$',
                   r'$\tilde{\alpha}_{G,r}$', r'$\tilde{\alpha}_{T,r}$']
+
+        # At the third position there is no plot but information
         axes[3].axis('off')
-        axes[3].text(0.1, 0.5, norm + ' reg. = ' + str(alpha_lx) + '\ngeneral_linear_models type: ' + glm_version +
-                     '\n#ofparams <' + str(cutoff) + ': ' + str(sparse_count) + '/' + str(np.size(beta_arr[:, 1:])),
-                     fontsize=14)
+        axes[3].text(0.1, 0.5, self.reg_type + ' reg. = ' + str(self.reg_strength) + '\nmodel type: ' + self.type, fontsize=14)
+
         for i in range(0, 11):
-            if i < 3:
-                ax = axes[i]
-            else:
-                ax = axes[i + 1]
+            ax = axes[i] if i < 3 else axes[i + 1]
             ax.axhline(0, color='black')
             ax.set_title(titles[i], fontsize=10)
-            values = beta_arr[:, i]
-            keys = beta_dic.keys()
-            positions = np.arange(len(keys))
-            ax.bar(positions, np.array(values).flatten(), align='center', width=0.8,
-                   color=[mt_type_col[i] for i in range(12)])
-            ax.set_xticks(positions)
-            ax.set_xticklabels(keys, rotation='vertical')
+            ax.bar(mut_types, W_matrix[:, i].flatten(), align='center', width=0.8,
+                   color=[mut_type_cols[i] for i in range(12)])
             if (i + 1) % 4 != 0 and i != 0 and i != 1:
                 ax.set_yticklabels([])
             if i > 6:
                 ax.set_xlabel('mutation type')
             if i > 0:
-                ax.set_ylim(1.05 * beta_min, 1.05 * beta_max)
+                ax.set_ylim(1.05 * w_min, 1.05 * w_max) if y_lims is None else ax.set_ylim(1.05 * y_lims[0], 1.05 * y_lims[1])
         plt.tight_layout()
-        plt.savefig('alpha_1.png')
         plt.show()
 
-        # Make a plot of beta for every mutation type (12 plots)
-        fig, axes = plt.subplots(3, 4, figsize=(16, 10), dpi=200)
-        axes = axes.flatten()
-        ax_inv = [0, 4, 8, 1, 5, 9, 2, 6, 10, 3, 7, 11, ]
-        for i, (key, values) in enumerate(beta_dic.items()):
-            ax = axes[ax_inv[i]]
+        # Plot w for every mutation type (12 plots)
+        fig, axes = plt.subplots(3, 4, figsize=(16, 9))
+        for i, mut_type in enumerate(mut_types):
+            ax = axes[plot_map[mut_type]]
             ax.axhline(0, color='black')
-            values = beta_arr[i, 1:]
-            positions = np.arange(len(values))
-            ax.bar(positions, values, align='center', width=0.8, color=mt_type_col[i])
-            ax.set_title(key[0] + ' --> ' + key[1], fontsize=10)
-            ax.set_xticks(positions)  # Set the positions of x-ticks
-            ax.set_xticklabels(titles[1:])
-            if ax_inv[i] % 4 != 0:
+            values = W_matrix[i, 1:]
+            ax.bar(titles[1:], values, align='center', width=0.8, color=mut_type_cols[i])
+            ax.set_title(mut_type[0] + r'$\rightarrow$' + mut_type[1], fontsize=10)
+            if plot_map[mut_type][1] != 0:
                 ax.set_yticks([])
-            ax.set_ylim(1.05 * beta_min, 1.05 * beta_max)
+            ax.set_ylim(1.05 * w_min, 1.05 * w_max) if y_lims is None else ax.set_ylim(1.05 * y_lims[0],
+                                                                                       1.05 * y_lims[1])
         plt.tight_layout()
         plt.show()
 
@@ -253,7 +242,6 @@ class GeneralLinearModel:
         return predicted_log_counts
 
     def plot_fit_vs_data(self):
-        # TODO: Add mean squared error and learned parameters
 
         # Prepare figure with the same aspect ratio as Keynote slides
         fig, axes = plt.subplots(3, 4, figsize=(16, 9))
@@ -385,7 +373,7 @@ def plot_mse(mean_sq_err_dic):
     plt.grid(True)
     plt.legend(loc='upper right')
     plt.tight_layout()
-    plt.savefig(f'results/{CLADE}')
+    plt.savefig(f'results/mse_{CLADE}')
     plt.show()
 
 
@@ -395,7 +383,7 @@ if __name__ == '__main__':
 
     full_df = load_mut_counts(clade=CLADE)
 
-    model_versions = ['base', 'p_up', 'l_r', 'l_r_st', 'lr', 'lr_pup']
+    model_versions = ['base', 'p_up', 'l_r', 'l_r_st', 'lr', 'lr_pup'][2:3]
 
     REGULARIZATION = [('l1', 0.01), ('l2', 0.1)][1]
 
@@ -409,4 +397,4 @@ if __name__ == '__main__':
 
         mean_squared_errs[model_version] = model.mean_sq_errs
 
-    plot_mse(mean_squared_errs)
+    #plot_mse(mean_squared_errs)
