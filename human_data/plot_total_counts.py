@@ -17,9 +17,9 @@ def plot_relative_mut_counts(mean_counts, title):
     plt.xticks(x_ticks, mut_types)
 
     width = 0.3
-    plt.bar(x_ticks + width, rel_values[:, 0], width=width, color='b', label='paired', alpha=0.6)
+    plt.bar(x_ticks - width, rel_values[:, 0], width=width, color='b', label='paired', alpha=0.6)
     plt.bar(x_ticks, rel_values[:, 1], width=width, color='r', label='unpaired', alpha=0.6)
-    plt.bar(x_ticks - width, rel_values[:, 2], width=width, color='black', label='total', alpha=0.8)
+    plt.bar(x_ticks + width, rel_values[:, 2], width=width, color='black', label='total', alpha=0.8)
 
     plt.xlabel('mutation type', fontsize=12)
     plt.ylabel('relative amount', fontsize=12)
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     this for comparing 21J and 21K.'''
     # TODO: Save the figures for the different clades somewhere
 
-    CLADE = '21K'
+    CLADE = '21J'
 
     # Read file with mutation data
     df_all = load_mut_counts(CLADE)
