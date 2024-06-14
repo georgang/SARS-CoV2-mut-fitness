@@ -25,8 +25,10 @@ gene_boundaries = [(266, 13480, 'ORF1a'),
                    (28575, 29530, 'N'),
                    (29558, 29671, 'ORF10')]
 
+tolerant_orfs = ['ORF6', 'ORF7a', 'ORF7b', 'ORF8', 'ORF10']
 
-def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, include_noncoding=False, verbose=True):
+
+def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, include_noncoding=False, include_tolerant_orfs=False, verbose=True):
 
     # Load file with mutation counts of selected clade
     df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/human_data/counts/counts_all_{clade}.csv')
@@ -75,9 +77,14 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
 
     # Only keep desired mutation types
     # TODO: Print number of kept/excluded mutations
+    # TODO: Currently, it would not be possible to choose the tolerant ORFs but not the noncoding ones
     if mut_types == 'synonymous':
         if include_noncoding:
-            df = df[(df['synonymous'] == True) | (df['noncoding'] == True)]
+            if include_tolerant_orfs:
+                pattern = '|'.join(tolerant_orfs)
+                df = df[(df['synonymous'] == True) | (df['noncoding'] == True) | (df['gene'].str.contains(pattern))]
+            else:
+                df = df[(df['synonymous'] == True) | (df['noncoding'] == True)]
         else:
             df = df[df['synonymous'] == True]
     elif mut_types == 'four_fold_degenerate':
