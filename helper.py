@@ -10,6 +10,7 @@ plot_map = {'AC': (0, 0), 'CA': (0, 1), 'GA': (0, 2), 'TA': (0, 3),
             'AT': (2, 0), 'CT': (2, 1), 'GT': (2, 2), 'TG': (2, 3)
             }
 
+# obtained from get_gene_boundaries.py
 gene_boundaries = [(266, 13480, 'ORF1a'),
                    (13468, 21552, 'ORF1b'),
                    (21563, 25381, 'S'),
@@ -25,12 +26,14 @@ gene_boundaries = [(266, 13480, 'ORF1a'),
                    (28575, 29530, 'N'),
                    (29558, 29671, 'ORF10')]
 
+# Open reading frames that are tolerant to stop codons (see Fig. 3B in J. Bloom and R. Neher (2023))
 tolerant_orfs = ['ORF6', 'ORF7a', 'ORF7b', 'ORF8', 'ORF10']
 
 
-def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None, include_noncoding=False, include_tolerant_orfs=False, verbose=True):
+def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None,
+                    include_noncoding=False, remove_orf9b=False, include_tolerant_orfs=False, verbose=True):
 
-    # Load file with mutation counts of selected clade
+    # Load file with all mutation counts in selected clade
     df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/human_data/counts/counts_all_{clade}.csv')
 
     # Add -2 to +2 context
@@ -52,7 +55,7 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
     unpaired = np.hstack((unpaired, np.full(len(nts) - len(df_sec_str), -1)))
     df['unpaired'] = np.repeat(unpaired, 3)
 
-    # Get -2 to +2 context from secondary structure data for comparison to the one above from the counts.csv file
+    # Get -2 to +2 context from secondary structure data for comparison to the one obtained from counts_all_{clade}.csv
     nts_sec_str = np.hstack((df_sec_str['nt_type'], np.full(len(nts) - len(df_sec_str), 'N')))
     context_sec_str = ['XXXXX'] * len(nts_sec_str)
     context_sec_str[2:-2] = nts_sec_str[0:-4] + nts_sec_str[1:-3] + nts_sec_str[2:-2] + nts_sec_str[3:-1] + nts_sec_str[4:]
@@ -72,22 +75,39 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
             print(f'{int(np.count_nonzero(context != context_sec_str)/3)} sites excluded because contexts not '
                   f'consistent between data sources.\n')
 
-    # Remove excluded mutations/sites
-    df = df[df['exclude'] == False]
+    # Mask for non-excluded mutations/sites
+    mask_non_excluded = (df['exclude'] == False).values
 
-    # Only keep desired mutation types
-    # TODO: Print number of kept/excluded mutations
-    # TODO: Currently, it would not be possible to choose the tolerant ORFs but not the noncoding ones
-    if mut_types == 'synonymous':
-        if include_noncoding:
-            if include_tolerant_orfs:
-                pattern = '|'.join(tolerant_orfs)
-                df = df[(df['synonymous'] == True) | (df['noncoding'] == True) | (df['gene'].str.contains(pattern))]
-            else:
-                df = df[(df['synonymous'] == True) | (df['noncoding'] == True)]
-        else:
-            df = df[df['synonymous'] == True]
-    elif mut_types == 'four_fold_degenerate':
-        df = df[df['four_fold_degenerate'] == True]
+    # Mask for mutations that are labeled as synonymous
+    mask_synonymous = (df['synonymous'] == True).values
+
+    # Mask for mutations that are labeled as four-fold-degenerate
+    mask_ffd = (df['four_fold_degenerate'] == True).values
+
+    # Mask for noncoding sites
+    mask_noncoding = (df['noncoding'] == True).values
+
+    # Mask for sites which are in the stop codon tolerant open reading frames
+    pattern = '|'.join(tolerant_orfs)
+    mask_tolerant = (df['gene'].str.contains(pattern)).values
+
+    # Mask for mutations that are in N;ORF9b and are synonymous in N
+    mask_orf9b = ((df['gene'] == 'N;ORF9b') & (df['clade_founder_aa'].apply(lambda x: x[0]) == df['mutant_aa'].apply(lambda x: x[0]))).values
+
+    # Choose between synonymous and four-fold-degenerate mutations
+    mask_inter = mask_synonymous
+    if mut_types == 'four_fold_degenerate':
+        mask_inter = mask_ffd
+
+    # Add other mutation types
+    if include_noncoding:
+        mask_inter = mask_inter + mask_noncoding
+    if include_tolerant_orfs:
+        mask_inter = mask_inter + mask_tolerant
+    if remove_orf9b:
+        mask_inter = mask_inter + mask_orf9b
+
+    # Only keep non-excluded selected mutations
+    df = df[mask_non_excluded * mask_inter]
 
     return df
