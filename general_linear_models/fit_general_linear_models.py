@@ -27,7 +27,7 @@ def add_predictions(dataframe, clade):
 
     pred_log_counts = gen_lin_model.predict_log_counts()
 
-    dataframe['pred_log_counts'] = pred_log_counts
+    dataframe['pred_log_count'] = pred_log_counts
 
     return dataframe
 
