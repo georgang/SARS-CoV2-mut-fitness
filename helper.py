@@ -31,7 +31,8 @@ tolerant_orfs = ['ORF6', 'ORF7a', 'ORF7b', 'ORF8', 'ORF10']
 
 
 def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_discrepant_contexts=None,
-                    include_noncoding=False, remove_orf9b=False, include_tolerant_orfs=False, verbose=True):
+                    include_noncoding=False, remove_orf9b=False, include_tolerant_orfs=False, incl_orf1ab_overlap=False,
+                    verbose=True):
 
     # Load file with all mutation counts in selected clade
     df = pd.read_csv(f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/human_data/counts/counts_all_{clade}.csv')
@@ -94,6 +95,14 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
     # Mask for mutations that are in N;ORF9b and are synonymous in N
     mask_orf9b = ((df['gene'] == 'N;ORF9b') & (df['clade_founder_aa'].apply(lambda x: x[0]) == df['mutant_aa'].apply(lambda x: x[0]))).values
 
+    # Mask for the overlapping region of ORF1a and ORF1b
+    if incl_orf1ab_overlap == 'ORF1a':
+        mask_orf1ab_overlap = ((df['nt_site'] >= 13469) & (df['nt_site'] <= 13480) & (df['clade_founder_aa'].apply(lambda x: x[0]) == df['mutant_aa'].apply(lambda x: x[0]))).values
+    elif incl_orf1ab_overlap == 'ORF1b':
+        mask_orf1ab_overlap = ((df['nt_site'] >= 13469) & (df['nt_site'] <= 13480) & (df['clade_founder_aa'].apply(lambda x: x[-1]) == df['mutant_aa'].apply(lambda x: x[-1]))).values
+    elif incl_orf1ab_overlap == 'both':
+        mask_orf1ab_overlap = ((df['nt_site'] >= 13469) & (df['nt_site'] <= 13480) & (df['clade_founder_aa'].apply(lambda x: x[-1]) == df['mutant_aa'].apply(lambda x: x[-1])) | (df['clade_founder_aa'].apply(lambda x: x[0]) == df['mutant_aa'].apply(lambda x: x[0]))).values
+
     # Choose between synonymous and four-fold-degenerate mutations
     mask_inter = mask_synonymous
     if mut_types == 'four_fold_degenerate':
@@ -106,8 +115,10 @@ def load_mut_counts(clade, mut_types='synonymous', sec_str_cell_type='Huh7', rm_
         mask_inter = mask_inter + mask_tolerant
     if remove_orf9b:
         mask_inter = mask_inter + mask_orf9b
+    if incl_orf1ab_overlap:
+        mask_inter = mask_inter + mask_orf1ab_overlap
 
-    # Only keep non-excluded selected mutations
-    df = df[mask_non_excluded * mask_inter]
-
-    return df
+    if mut_types == 'non-excluded':
+        return df[mask_non_excluded]
+    else:
+        return df[mask_non_excluded * mask_inter]
