@@ -136,9 +136,9 @@ def get_probabilistic_fitness_estimates(clade, hyperparams):
     # Adopt hyperparameters
     if isinstance(hyperparams['sigma_f'], (int, float)):
         sigma_f = np.full((len(f_hat),), hyperparams['sigma_f'])
-    else:
-        # TODO: Try site-dependent sigma_f
-        print('error')
+    elif hyperparams['sigma_f'] == 'site-dependent':
+        expected_counts = np.exp(df['pred_log_count'].values)
+        sigma_f = (expected_counts - 0.5)**2 / expected_counts**2
     sigma_n = hyperparams['sigma_n']
     sigma_s = hyperparams['sigma_s']
 
@@ -186,11 +186,11 @@ def plot_fitness_estimates(original_positions, new_fitness_estimates, original_f
 
         plt.axhline(0, linestyle='-', color='gray', lw=2, alpha=0.5)
         plt.axhline(mean_new, color='red', linestyle='-')
-        plt.axhline(mean_new + 2 * stdev_new, color='red', linestyle='--')
-        plt.axhline(mean_new - 2 * stdev_new, color='red', linestyle='--')
-        plt.axhline(mean_old, color='green', linestyle='-')
-        plt.axhline(mean_old + 2 * stdev_old, color='green', linestyle='--', linewidth=1.5)
-        plt.axhline(mean_old - 2 * stdev_old, color='green', linestyle='--', linewidth=1.5)
+        plt.axhline(mean_new + stdev_new, color='red', linestyle='--')
+        plt.axhline(mean_new - stdev_new, color='red', linestyle='--')
+        plt.axhline(mean_old, color='green', linestyle='-', alpha=0.5)
+        plt.axhline(mean_old + stdev_old, color='green', linestyle='--', linewidth=1.5, alpha=0.5)
+        plt.axhline(mean_old - stdev_old, color='green', linestyle='--', linewidth=1.5, alpha=0.5)
 
         plt.plot(original_positions, new_fitness_estimates, linestyle='-', marker='none', label="probabilistic estimate", markersize=3,
                  linewidth=2.5, color='red')
@@ -198,7 +198,7 @@ def plot_fitness_estimates(original_positions, new_fitness_estimates, original_f
                  markersize=3, linewidth=1.5, color='green', alpha=0.5)
 
         plt.xlim((first_site, last_site))
-        plt.ylim((-5, 2))
+        plt.ylim((-4.5, 2))
 
         plt.xlabel('nucleotide position')
         plt.ylabel('fitness effect')
@@ -234,7 +234,7 @@ def plot_fitness_estimates(original_positions, new_fitness_estimates, original_f
 if __name__ == '__main__':
 
     # Define hyperparameters
-    hyperparams = {'sigma_n': 0.1, 'sigma_s': 1, 'sigma_f': 1}
+    hyperparams = {'sigma_n': 0.1, 'sigma_s': 1000, 'sigma_f': [0.5, 'site-dependent'][0]}
 
     # Get new and old fitness estimates averaged over mutation types at every nt site that has no excluded mutations
     nt_sites, new_fitness_estimates, old_fitness_estimates = get_probabilistic_fitness_estimates('21J', hyperparams)
