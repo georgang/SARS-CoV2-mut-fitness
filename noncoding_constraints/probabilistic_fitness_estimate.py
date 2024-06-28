@@ -1,12 +1,57 @@
 import numpy as np
+import pandas as pd
 import matplotlib.cm as cm
 from matplotlib import pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 from helper import load_mut_counts, gene_boundaries, tolerant_orfs
 from general_linear_models.fit_general_linear_models import add_predictions
+from Bio import SeqIO
+
 
 plt.rcParams.update({'font.size': 12})
+
+# Load secondary structure information, TODO: The illustration in the experimental paper is for Vero cells
+df_sec_str = pd.read_csv(
+    f'/Users/georgangehrn/Desktop/SARS-CoV2-mut-fitness/sec_stru_data/data/sec_structure_Huh7.txt',
+    header=None, sep='\s+').drop(columns=[2, 3, 5])
+df_sec_str.rename(columns={0: 'nt_site', 1: 'nt_type', 4: 'unpaired'}, inplace=True)
+
+
+def get_conserved_regions(only_known=False):
+    TRS_motif = "ACGAAC"  # consensus sequence of transcription regulatory sites
+    margin = 0
+    ref = SeqIO.read('../human_data/reference.gb', 'genbank')
+
+    motifs = []
+    pos = 1
+    while pos > 0:
+        pos = ref.seq.find(TRS_motif, pos)
+        if pos > 1:
+            motifs.append(pos)
+            pos += 1
+
+    conserved_regions = {}
+    for mi, mpos in enumerate(motifs):
+        conserved_regions[f'TRS {mi + 1}'] = (mpos - margin, mpos + len(TRS_motif) + margin)
+
+    # attenuator hairpin
+    conserved_regions['hairpin'] = (ref.seq.find("ATGCTTCA"), ref.seq.find("CGTTTTT"))
+    # attenuator hairpin
+    conserved_regions['slippery seq'] = (ref.seq.find("TTTAAACG"), ref.seq.find("TTTAAACG") + 7)
+    # 3 stem pseudoknot
+    conserved_regions['3-stem-pseudoknot'] = (ref.seq.find("GCGGTGT"), ref.seq.find("TTTTGA", 13474))
+    if not only_known:
+        # center of E
+        conserved_regions['E-center'] = (26330, 26360)
+        # end of M
+        conserved_regions['M-end'] = (27170, 27200)
+
+    conserved_vector = np.zeros(len(ref.seq), dtype=bool)
+    for r in conserved_regions.values():
+        conserved_vector[r[0]:r[1]] = True
+
+    return conserved_vector, conserved_regions
 
 
 def log_p_of_f_k(sites, f_hat, f_vals, a_left, b_left, a_right, b_right, sigma_n, sigma_s, sigma_f):
@@ -227,8 +272,16 @@ def solve_lse(sigma, rho, tau, g):
 
 
 def get_probabilistic_fitness_estimates(clade, hyperparams):
+    """
+    Parameters:
+        (...)
+    Returns:
+        nucleotide_positions (array): nucleotide positions >265 and <29675
+        f_i (array): probabilistic fitness estimates
+        (...)
+    """
 
-    # Load all mutation counts and add predictions
+    # Load all mutation counts and add predicted counts
     df = load_mut_counts(clade=clade, mut_types='all')
     df = add_predictions(df.copy(), clade=clade)
 
@@ -242,7 +295,7 @@ def get_probabilistic_fitness_estimates(clade, hyperparams):
     mask_synonymous = df['synonymous'].values
     # Mask for mutations that are in N;ORF9b and synonymous in N
     mask_orf9b = ((df['gene'] == 'N;ORF9b') & (df['clade_founder_aa'].apply(lambda x: x[0]) == df['mutant_aa'].apply(lambda x: x[0]))).values
-    # Mask for sites which are in the stop codon tolerant open reading frames
+    # Mask for sites which are in stop codon tolerant open reading frames
     pattern = '|'.join(tolerant_orfs)
     mask_tolerant = (df['gene'].str.contains(pattern)).values
     # Mask for non-excluded sites
@@ -259,7 +312,7 @@ def get_probabilistic_fitness_estimates(clade, hyperparams):
             actual_counts_sum = group['actual_count'].sum()
             predicted_counts_sum = (np.exp(group['pred_log_count']) - 0.5).sum()
             return np.log(actual_counts_sum + 0.5) - np.log(predicted_counts_sum + 0.5)
-    # Aggregate counts of noncoding nonexcluded mutations
+    # Get observed fitness effect at every site
     g_i = df.groupby('nt_site').apply(custom_agg).values
 
     # Set sigma_i (cf. notes)
@@ -276,13 +329,15 @@ def get_probabilistic_fitness_estimates(clade, hyperparams):
     # Get probabilistic fitness estimates
     f_i = solve_lse(sigma_i, rho_i, tau_i, g_i)
 
-    # original and translated (new) positions of non-excluded sites
-    original_positions = np.arange(266, 29674 + 1)
+    # nucleotide positions
+    nucleotide_positions = np.arange(266, 29674 + 1)
 
-    return original_positions, f_i, original_positions[~mask_rho], g_i[~mask_rho]
+    # Return nucleotide sites >265 and <29675, the corresponding probabilistic fitness estimates, and the naive
+    # fitness estimate at all sites which have at least one included mutation
+    return nucleotide_positions, f_i, nucleotide_positions[~mask_rho], g_i[~mask_rho]
 
 
-def plot_fitness_estimates(probabilistic_pos, probabilistic_estims, original_pos, original_estims, hyperparams, first_site, last_site):
+def plot_fitness_estimates(probabilistic_pos, probabilistic_estims, original_pos, original_estims, hyperparams, first_site, last_site, min_fit=-7):
     """
     :param probabilistic_pos: nt positions for which there is a probabilistic fitness estimate (29'247 non-excluded sites)
     :param probabilistic_estims: f_k which maximizes the posterior probability p(f_k|{n_i})
@@ -301,6 +356,12 @@ def plot_fitness_estimates(probabilistic_pos, probabilistic_estims, original_pos
         mean_new, stdev_new = np.average(probabilistic_estims), np.std(probabilistic_estims)
         mean_old, stdev_old = np.average(original_estims), np.std(original_estims)
 
+        # Increase figure size if too small
+        if last_site - first_site < 60:
+            diff = 60 - last_site + first_site
+            first_site = first_site - int(diff/2)
+            last_site = last_site + int(diff / 2)
+
         # Define figure size
         w = 0.125 * (last_site - first_site)
         h = 6
@@ -309,37 +370,68 @@ def plot_fitness_estimates(probabilistic_pos, probabilistic_estims, original_pos
         # Add mean and standard deviations
         plt.axhline(0, linestyle='-', color='gray', lw=2, alpha=0.5)
         plt.axhline(mean_new, color='green', linestyle='-')
-        plt.axhline(mean_new + stdev_new, color='green', linestyle='--')
-        plt.axhline(mean_new - stdev_new, color='green', linestyle='--')
+        plt.axhline(mean_new + OUTLIER_COND * stdev_new, color='green', linestyle='--')
+        plt.axhline(mean_new - OUTLIER_COND * stdev_new, color='green', linestyle='--')
         plt.axhline(mean_old, color='red', linestyle='-', alpha=0.5)
-        plt.axhline(mean_old + stdev_old, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
-        plt.axhline(mean_old - stdev_old, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        plt.axhline(mean_old + OUTLIER_COND * stdev_old, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
+        plt.axhline(mean_old - OUTLIER_COND * stdev_old, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
 
         # Plot both fitnesss estimates
         plt.plot(probabilistic_pos, probabilistic_estims, linestyle='-', marker='o', label="probabilistic estimate", markersize=3,
                  linewidth=2, color='green', alpha=0.5)
-        plt.plot(original_pos, original_estims, linestyle='-', marker='o', label="original estimate",
+        plt.plot(original_pos, original_estims, linestyle='-', marker='o', label="naive estimate",
                  markersize=3, linewidth=2, color='red', alpha=0.5)
 
         # Set limits of plot
         plt.xlim((first_site, last_site))
-        plt.ylim((-7, 5))
+        plt.ylim((min_fit, 5))
 
         # Add labels and title
         plt.xlabel('nucleotide position')
         plt.ylabel('fitness effect')
-        plt.title(f"$\sigma_{{N}}=${hyperparams['sigma_n']}, $\sigma_{{S}}=${hyperparams['sigma_s']}, $\sigma_{{F}}=${hyperparams['sigma_f']}")
+        plt.title(f"$\sigma_{{n}}=${hyperparams['sigma_n']}, $\sigma_{{S}}=${hyperparams['sigma_s']}, $\sigma_{{F}}=${hyperparams['sigma_f']}")
 
-        # Add gene boundaries to plot
+        # Add gene boundaries to plot, TODO: Make all of this a reusable function
         colors = cm.get_cmap('tab20', len(gene_boundaries))
         for i, (start, end, name) in enumerate(gene_boundaries):
-            if start >= first_site and start <= last_site:
-                plt.barh(y=-4.2 + (i % 2) * 0.2, width=end - start, left=start, height=0.2, color=colors(i), alpha=0.7)
-                plt.text(start, -4.2 + (i % 2) * 0.2, name, ha='left', va='center', fontsize=10)
-            elif end > first_site and end <= last_site:
-                plt.barh(y=-4.2 + (i % 2) * 0.2, width=end - first_site, left=first_site, height=0.2, color=colors(i),
-                         alpha=0.7)
-                plt.text(first_site, -4.2 + (i % 2) * 0.2, name, ha='left', va='center', fontsize=10)
+            plt.barh(y=min_fit + 1.1 + (i % 2) * 0.3, width=end - start, left=start, height=0.3, color=colors(i), alpha=0.7)
+            if first_site <= start <= last_site:
+                plt.text(start, min_fit + 1.1 + (i % 2) * 0.3, name, ha='left', va='center', fontsize=10)
+            elif first_site <= end <= last_site or (start < first_site and end > last_site):
+                plt.text(first_site, min_fit + 1.1 + (i % 2) * 0.3, name, ha='left', va='center', fontsize=10)
+
+        # Add known conserved regions
+        _, conserved_regions = get_conserved_regions()
+        conserved_regions = [(value[0], value[1], key) for key, value in conserved_regions.items()]
+        for i, (start, end, name) in enumerate(conserved_regions):
+            if ((start <= first_site <= end) or (start <= last_site <= end)) or (
+                    (first_site <= start <= last_site) and (first_site <= end <= last_site)):
+                plt.barh(y=min_fit + 1.7 + (i % 3) * 0.3, width=end - start, left=start, height=0.3,
+                         color='orange', alpha=0.6)
+                plt.text(max(start, first_site), min_fit + 1.7 + (i % 3) * 0.3, name, ha='left',
+                         va='center', fontsize=10)
+
+        # Get secondary structure information to write on the plot
+        df_help = df_sec_str[(df_sec_str['nt_site'] >= first_site) & (df_sec_str['nt_site'] <= last_site)]
+        sites_help = df_help['nt_site'].values
+        unpaired = (df_help['unpaired'].values == 0)
+        paired = 1 - unpaired
+
+        # Read in 21J reference sequence, TODO: Find a better solution that not only works for 21J
+        with open(f'21J_refseq', 'r') as file:
+            ref_seq = file.read()
+
+        # Get corresponding section of the reference sequence
+        nt_seq = ref_seq[int(first_site - 1):int(last_site)]
+
+        # Add parent nucleotides to plot
+        sites_help = np.arange(first_site, last_site + 1)
+        for i, letter in enumerate(nt_seq):
+            plt.text(sites_help[i], min_fit + 0.2, letter, ha='center', va='bottom')
+
+        # Add pairing information to plot
+        plt.bar(sites_help, unpaired * 0.3, bottom=min_fit + 0.6, color='red', alpha=0.7)
+        plt.bar(sites_help, paired * 0.3, bottom=min_fit + 0.6, color='blue', alpha=0.7)
 
         # Add every 10th nucleotide position as x-tick
         sites = probabilistic_pos[(probabilistic_pos >= first_site) & (probabilistic_pos <= last_site)]
@@ -358,20 +450,47 @@ def plot_fitness_estimates(probabilistic_pos, probabilistic_estims, original_pos
         plt.show()
 
 
+def make_region_list(arr, min_d, max_size):
+    regions = []
+    start = arr[0]
+    for i, site in enumerate(arr[:-1]):
+        if (arr[i + 1] > site + min_d) and (arr[i + 1] - start > max_size):
+            end = site
+            regions.append((start, end))
+            start = arr[i + 1]
+    regions.append((start, arr[-1]))
+    return regions
+
+
+def get_outlier_regions(fitness_estimates, outlier_condition, min_distance, max_region_size):
+
+    # Get mean and standard deviation of fitness estimates
+    mean = fitness_estimates.mean()
+    std = fitness_estimates.std()
+
+    # Find outliers
+    outliers = np.where((fitness_estimates < mean - outlier_condition * std) | (fitness_estimates > mean + outlier_condition * std))[0] + 265
+
+    # Make list of region boundaries
+    outlier_regions = make_region_list(outliers, min_distance, max_region_size)
+
+    return outlier_regions
+
+
 if __name__ == '__main__':
 
     # Define hyperparameters for probabilistic fitness estimate
-    hyperparams = {'sigma_n': 0.1, 'sigma_s': 1, 'sigma_f': [0.3, 10000]}
+    hyperparams = [{'sigma_n': 0.1, 'sigma_s': 10, 'sigma_f': [0.01, 10000]},
+                   {'sigma_n': 0.1, 'sigma_s': 10, 'sigma_f': [0.1, 10000]},
+                   {'sigma_n': 0.1, 'sigma_s': 10, 'sigma_f': [0.2, 10000]}][2]
 
     # Compute naive and probabilistic fitness estimate at all sites of the genome except excluded ones at start and end
-    CLADE = '21J'
-    sites_probabilistic, estimates_probabilistic, sites_naive, estimates_naive = get_probabilistic_fitness_estimates(CLADE, hyperparams)
+    sites_probabilistic, estimates_probabilistic, sites_naive, estimates_naive = get_probabilistic_fitness_estimates('21J', hyperparams)
+
+    # Find outlier regions to zoom into
+    OUTLIER_COND = 3
+    outlier_regions = get_outlier_regions(estimates_probabilistic, outlier_condition=OUTLIER_COND, min_distance=10, max_region_size=120)
 
     # Plot new vs. old fitness estimate within a defined window
-
-    regions = [(13420, 13560), (21510, 21600), (25340, 25440), (26170, 26290), (26300, 26420), (26430, 26540),
-    (27140, 27220), (28220, 28310)]
-    #regions = [(28220, 28310)]
-
-    for region in regions:
-        plot_fitness_estimates(sites_probabilistic, estimates_probabilistic, sites_naive, estimates_naive, hyperparams, first_site=region[0], last_site=region[1])
+    for region in outlier_regions[:10]:
+        plot_fitness_estimates(sites_probabilistic, estimates_probabilistic, sites_naive, estimates_naive, hyperparams, first_site=region[0]-10, last_site=region[1]+10)
