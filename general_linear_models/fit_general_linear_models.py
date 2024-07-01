@@ -98,7 +98,7 @@ class GeneralLinearModel:
     def plot_l_r_params(self, normalize, y_lims=None):
 
         # Convert dictionary to matrix of dimension (12,8) where rows are ordered AC to TG
-        W_matrix = np.vstack([self.W[mut_type] for mut_type in mut_types])
+        W_matrix = np.vstack([self.W[mut_type].T for mut_type in mut_types])
 
         # Add 3 additional columns (because of base case)
         W_matrix = np.insert(W_matrix, [1, 2, 5], 0, axis=1)
@@ -349,7 +349,7 @@ class GeneralLinearModel:
             if plot_map[mut_type] == (0, 0):
                 ax.legend()
             if plot_map[mut_type][1] == 0:
-                ax.set_ylabel('mean ln(n + 0.5)')
+                ax.set_ylabel('mean log(n + 0.5)')
 
         plt.suptitle(f'model type: {self.type}, reg. type: {self.reg_type}, reg. strength: {self.reg_strength}')
         plt.tight_layout()
@@ -393,9 +393,10 @@ def plot_mse(mean_sq_err_dic):
 
 if __name__ == '__main__':
 
-    CLADE = '21J'
+    CLADE = 'curated'
 
-    full_df = load_mut_counts(clade=CLADE)
+    full_df = load_mut_counts(clade=CLADE, mut_types='synonymous', include_noncoding=False, include_tolerant_orfs=False,
+                              remove_orf9b=False)
 
     model_versions = ['base', 'p_up', 'l_r', 'l_r_st', 'lr', 'lr_pup'][2:3]
 
